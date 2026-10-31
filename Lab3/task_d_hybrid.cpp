@@ -1,5 +1,5 @@
 // task_d_hybrid.cpp -- Task 4: Hybrid File Encryption Test Runner & CLI
-#include "hybrid_crypto.h"
+#include "hybrid.h"
 
 static int g_failures = 0;
 
