@@ -1,5 +1,4 @@
 // task_a_bignum.cpp -- Lab 3, Task A: Modular Arithmetic with BIGNUM
-// Algorithms: Square-and-multiply, Extended Euclidean, OpenSSL BIGNUM CLI
 
 #include <openssl/bn.h>
 #include <openssl/err.h>
@@ -65,8 +64,13 @@ static BIGNUM* myModExp(const BIGNUM* a, const BIGNUM* b, const BIGNUM* m, BN_CT
 
 // Extended Euclidean algorithm for a^-1 mod m. Returns NULL if gcd != 1.
 static BIGNUM* myModInverse(const BIGNUM* a, const BIGNUM* m, BIGNUM* gcdOut, BN_CTX* ctx) {
-    BIGNUM *r0 = BN_dup(m), *r1 = BN_new(), *t0 = BN_new(), *t1 = BN_new();
-    BIGNUM *q = BN_new(), *tmp = BN_new(), *prod = BN_new();
+    BIGNUM* r0 = BN_dup(m);
+    BIGNUM* r1 = BN_new();
+    BIGNUM* t0 = BN_new();
+    BIGNUM* t1 = BN_new();
+    BIGNUM* q = BN_new();
+    BIGNUM* tmp = BN_new();
+    BIGNUM* prod = BN_new();
     NOTNULL(r0); NOTNULL(r1); NOTNULL(t0); NOTNULL(t1);
     NOTNULL(q); NOTNULL(tmp); NOTNULL(prod);
     OK1(BN_nnmod(r1, a, m, ctx));
@@ -120,12 +124,16 @@ static BIGNUM* readBn(const char* prompt) {
 static void demoOtherOps() {
     BN_CTX* ctx = BN_CTX_new();
     NOTNULL(ctx);
-    BIGNUM *a = parseDec("3"), *b = parseDec("5"), *m = parseDec("7"), *r = BN_new();
+    BIGNUM* a = parseDec("3");
+    BIGNUM* b = parseDec("5");
+    BIGNUM* m = parseDec("7");
+    BIGNUM* r = BN_new();
     NOTNULL(r);
     OK1(BN_mod_add(r, a, b, m, ctx)); printBn("3+5 mod 7", r);
     OK1(BN_mod_sub(r, a, b, m, ctx)); printBn("3-5 mod 7", r);
     OK1(BN_mod_mul(r, a, b, m, ctx)); printBn("3*5 mod 7", r);
-    BIGNUM *x = parseDec("252"), *y = parseDec("105");
+    BIGNUM* x = parseDec("252");
+    BIGNUM* y = parseDec("105");
     OK1(BN_gcd(r, x, y, ctx)); printBn("gcd(252,105)", r);
     check("gcd(252,105) == 21", BN_is_word(r, 21));
     BN_free(a); BN_free(b); BN_free(m); BN_free(r); BN_free(x); BN_free(y);
@@ -138,7 +146,9 @@ static void runCase(const char* sa, const char* sb, const char* sm,
                     const char* expectExp, const char* expectInv) {
     BN_CTX* ctx = BN_CTX_new();
     NOTNULL(ctx);
-    BIGNUM *a = parseDec(sa), *b = parseDec(sb), *m = parseDec(sm);
+    BIGNUM* a = parseDec(sa);
+    BIGNUM* b = parseDec(sb);
+    BIGNUM* m = parseDec(sm);
     if (BN_is_zero(m)) die("modulus must be > 0");
     std::printf("a = %s, b = %s, m = %s\n", sa, sb, sm);
 
@@ -215,30 +225,39 @@ static void runMenu(BN_CTX* ctx) {
 
         if (choice == 1) {
             std::printf("\n--- Modular Addition ---\n");
-            BIGNUM *a = readBn("Enter a: "), *b = readBn("Enter b: "), *m = readBn("Enter modulus m: ");
+            BIGNUM* a = readBn("Enter a: ");
+            BIGNUM* b = readBn("Enter b: ");
+            BIGNUM* m = readBn("Enter modulus m: ");
             if (BN_is_zero(m)) { std::printf("Error: Modulus must be greater than 0!\n"); }
             else { OK1(BN_mod_add(r, a, b, m, ctx)); printBn("Result = ", r); }
             BN_free(a); BN_free(b); BN_free(m);
         } else if (choice == 2) {
             std::printf("\n--- Modular Subtraction ---\n");
-            BIGNUM *a = readBn("Enter a: "), *b = readBn("Enter b: "), *m = readBn("Enter modulus m: ");
+            BIGNUM* a = readBn("Enter a: ");
+            BIGNUM* b = readBn("Enter b: ");
+            BIGNUM* m = readBn("Enter modulus m: ");
             if (BN_is_zero(m)) { std::printf("Error: Modulus must be greater than 0!\n"); }
             else { OK1(BN_mod_sub(r, a, b, m, ctx)); printBn("Result = ", r); }
             BN_free(a); BN_free(b); BN_free(m);
         } else if (choice == 3) {
             std::printf("\n--- Modular Multiplication ---\n");
-            BIGNUM *a = readBn("Enter a: "), *b = readBn("Enter b: "), *m = readBn("Enter modulus m: ");
+            BIGNUM* a = readBn("Enter a: ");
+            BIGNUM* b = readBn("Enter b: ");
+            BIGNUM* m = readBn("Enter modulus m: ");
             if (BN_is_zero(m)) { std::printf("Error: Modulus must be greater than 0!\n"); }
             else { OK1(BN_mod_mul(r, a, b, m, ctx)); printBn("Result = ", r); }
             BN_free(a); BN_free(b); BN_free(m);
         } else if (choice == 4) {
             std::printf("\n--- Greatest Common Divisor ---\n");
-            BIGNUM *a = readBn("Enter a: "), *b = readBn("Enter b: ");
+            BIGNUM* a = readBn("Enter a: ");
+            BIGNUM* b = readBn("Enter b: ");
             OK1(BN_gcd(r, a, b, ctx)); printBn("GCD = ", r);
             BN_free(a); BN_free(b);
         } else if (choice == 5) {
             std::printf("\n--- Modular Exponentiation ---\n");
-            BIGNUM *a = readBn("Enter base a: "), *b = readBn("Enter exponent b: "), *m = readBn("Enter modulus m: ");
+            BIGNUM* a = readBn("Enter base a: ");
+            BIGNUM* b = readBn("Enter exponent b: ");
+            BIGNUM* m = readBn("Enter modulus m: ");
             if (BN_is_zero(m)) { std::printf("Error: Modulus must be greater than 0!\n"); }
             else {
                 BIGNUM* r1 = myModExp(a, b, m, ctx);
@@ -251,7 +270,8 @@ static void runMenu(BN_CTX* ctx) {
             BN_free(a); BN_free(b); BN_free(m);
         } else if (choice == 6) {
             std::printf("\n--- Modular Inverse ---\n");
-            BIGNUM *a = readBn("Enter a: "), *m = readBn("Enter modulus m: ");
+            BIGNUM* a = readBn("Enter a: ");
+            BIGNUM* m = readBn("Enter modulus m: ");
             if (BN_is_zero(m) || BN_is_one(m)) { std::printf("Error: Modulus must be greater than 1!\n"); }
             else {
                 BIGNUM* g = BN_new();
@@ -298,7 +318,6 @@ int main(int argc, char** argv) {
     BN_CTX* ctx = BN_CTX_new();
     NOTNULL(ctx);
 
-    // Chế độ test tự động từ dòng lệnh: ./task_a --test
     if (argc == 2 && std::strcmp(argv[1], "--test") == 0) {
         std::printf("== Task A: handout test vectors ==\n\n");
         demoOtherOps();
@@ -315,14 +334,12 @@ int main(int argc, char** argv) {
         return g_failures ? 1 : 0;
     }
 
-    // Chế độ nhận tham số tùy ý: ./task_a <a> <b> <m>
     if (argc == 4) {
         runCase(argv[1], argv[2], argv[3], nullptr, nullptr);
         BN_CTX_free(ctx);
         return g_failures ? 1 : 0;
     }
 
-    // Chế độ mặc định: Chạy menu tương tác CLI (như trong ảnh)
     runMenu(ctx);
 
     BN_CTX_free(ctx);

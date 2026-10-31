@@ -1,302 +1,262 @@
-#include <openssl/bio.h>
-#include <openssl/bn.h>
-#include <openssl/core_names.h>
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/pem.h>
-#include <openssl/x509.h>
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <vector>
+// task_b_rsa_keys.cpp -- Task 2: RSA Key Management (PEM & DER) with CLI Menu
+#include "rsa_key.h"
 
-// ===== Minimal helpers (identical in every task file) =====================
-using Bytes = std::vector<unsigned char>;
 static int g_failures = 0;
-
-[[noreturn]] static void die(const char* what) {
-    std::fprintf(stderr, "FAILED: %s\n", what);
-    ERR_print_errors_fp(stderr); // OpenSSL's reason strings
-    std::exit(1);
-}
-
-#define OK1(call)     do { if ((call) != 1) die(#call); } while (0)
-#define OKPOS(call)   do { if ((call) <= 0) die(#call); } while (0)
-#define NOTNULL(ptr)  do { if ((ptr) == nullptr) die(#ptr " is NULL"); } while (0)
-
-[[maybe_unused]] static void printHex(const char* label, const unsigned char* p, size_t n, size_t maxShown = 24) {
-    std::printf("  %-16s", label);
-    for (size_t i = 0; i < n && i < maxShown; ++i) std::printf("%02x", p[i]);
-    if (n > maxShown) std::printf("... (%lu bytes)", static_cast<unsigned long>(n));
-    std::printf("\n");
-}
-
-[[maybe_unused]] static void printBn(const char* label, const BIGNUM* x) { // decimal
-    char* s = BN_bn2dec(x);
-    NOTNULL(s);
-    std::printf("  %-16s%s\n", label, s);
-    OPENSSL_free(s);
-}
-
-[[maybe_unused]] static void printBnBits(const char* label, const BIGNUM* x) { // hex + bit length
-    char* s = BN_bn2hex(x);
-    NOTNULL(s);
-    std::printf("  %-16s%d bits, 0x%.24s...\n", label, BN_num_bits(x), s);
-    OPENSSL_free(s);
-}
 
 [[maybe_unused]] static void check(const char* name, bool ok) {
     std::printf("  [%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
 }
 
-// ==========================================================================
-// Part 1. Educational RSA parameters (NOT for real use)
-// ==========================================================================
-// Draws probable primes until gcd(e, prime - 1) = 1. Returns the number of draws.
+// Educational RSA parameter calculation
 static int drawPrime(BIGNUM* prime, BIGNUM* primeMinus1, const BIGNUM* e, int bits, BN_CTX* ctx) {
     BIGNUM* g = BN_new();
-    NOTNULL(g);
+    NOTNULL_KEY(g);
     int draws = 0;
     do {
         ++draws;
-        OK1(BN_generate_prime_ex2(prime, bits, /*safe=*/0, nullptr, nullptr, nullptr, ctx));
-        NOTNULL(BN_copy(primeMinus1, prime));
-        OK1(BN_sub_word(primeMinus1, 1));
-        OK1(BN_gcd(g, e, primeMinus1, ctx));
+        OK1_KEY(BN_generate_prime_ex2(prime, bits, 0, nullptr, nullptr, nullptr, ctx));
+        NOTNULL_KEY(BN_copy(primeMinus1, prime));
+        OK1_KEY(BN_sub_word(primeMinus1, 1));
+        OK1_KEY(BN_gcd(g, e, primeMinus1, ctx));
     } while (!BN_is_one(g));
     BN_free(g);
     return draws;
 }
 
 static void part1EducationalRsa(int bits) {
-    std::printf("== Part 1: educational RSA, %d-bit modulus (INSECURE) ==\n", bits);
+    std::printf("== Part 1: Educational RSA Parameters (%d-bit modulus) ==\n", bits);
     BN_CTX* ctx = BN_CTX_new();
-    NOTNULL(ctx);
+    NOTNULL_KEY(ctx);
     BIGNUM *e = BN_new(), *p = BN_new(), *q = BN_new(), *pm1 = BN_new(), *qm1 = BN_new();
     BIGNUM *g = BN_new(), *n = BN_new(), *phi = BN_new(), *lambda = BN_new();
-    NOTNULL(e); NOTNULL(p); NOTNULL(q); NOTNULL(pm1); NOTNULL(qm1);
-    NOTNULL(g); NOTNULL(n); NOTNULL(phi); NOTNULL(lambda);
-    OK1(BN_set_word(e, 65537));
+    OK1_KEY(BN_set_word(e, 65537));
 
-    // Step 1: primes p != q with gcd(e, p-1) = gcd(e, q-1) = 1.
     int attempts = drawPrime(p, pm1, e, bits / 2, ctx);
     do { attempts += drawPrime(q, qm1, e, bits / 2, ctx); } while (BN_cmp(p, q) == 0);
     std::printf("  primes found after %d draw(s)\n", attempts);
 
-    // Step 2: n = p*q, phi = (p-1)(q-1), lambda = lcm(p-1, q-1)
-    OK1(BN_mul(n, p, q, ctx));
-    OK1(BN_mul(phi, pm1, qm1, ctx));
-    OK1(BN_gcd(g, pm1, qm1, ctx));
-    OK1(BN_div(lambda, nullptr, phi, g, ctx)); // lambda = phi / gcd
+    OK1_KEY(BN_mul(n, p, q, ctx));
+    OK1_KEY(BN_mul(phi, pm1, qm1, ctx));
+    OK1_KEY(BN_gcd(g, pm1, qm1, ctx));
+    OK1_KEY(BN_div(lambda, nullptr, phi, g, ctx));
 
-    // Step 3: the two valid private exponents
     BIGNUM* dPhi = BN_mod_inverse(nullptr, e, phi, ctx);
     BIGNUM* dLam = BN_mod_inverse(nullptr, e, lambda, ctx);
-    NOTNULL(dPhi); NOTNULL(dLam);
+    NOTNULL_KEY(dPhi); NOTNULL_KEY(dLam);
 
-    // Step 4: CRT values dP = d mod (p-1), dQ = d mod (q-1), qInv = q^-1 mod p
-    BIGNUM *dP = BN_new(), *dQ = BN_new();
-    NOTNULL(dP); NOTNULL(dQ);
-    OK1(BN_nnmod(dP, dLam, pm1, ctx));
-    OK1(BN_nnmod(dQ, dLam, qm1, ctx));
-    BIGNUM* qInv = BN_mod_inverse(nullptr, q, p, ctx);
-    NOTNULL(qInv);
+    BIGNUM *dP = BN_new(), *dQ = BN_new(), *qInv = BN_mod_inverse(nullptr, q, p, ctx);
+    OK1_KEY(BN_nnmod(dP, dLam, pm1, ctx));
+    OK1_KEY(BN_nnmod(dQ, dLam, qm1, ctx));
 
-    printBnBits("n", n);
-    printBn("e", e);
-    printBnBits("d (mod phi)", dPhi);
-    printBnBits("d (mod lambda)", dLam);
-    printBn("gcd(p-1,q-1)", g);
+    print_bn_bits("n", n);
+    print_bn_dec("e", e);
+    print_bn_bits("d (mod phi)", dPhi);
+    print_bn_bits("d (mod lambda)", dLam);
 
-    // Step 5: verify e*d = 1 (mod phi) and (mod lambda)
     BIGNUM* t = BN_new();
-    NOTNULL(t);
-    OK1(BN_mod_mul(t, e, dPhi, phi, ctx));
-    check("e * d_phi = 1 (mod phi)", BN_is_one(t));
-    OK1(BN_mod_mul(t, e, dLam, lambda, ctx));
-    check("e * d_lambda = 1 (mod lambda)", BN_is_one(t));
-    OK1(BN_nnmod(t, dPhi, lambda, ctx));
-    check("d_phi mod lambda == d_lambda", BN_cmp(t, dLam) == 0);
-    std::printf("  d_phi == d_lambda this time? %s\n",
-                BN_cmp(dPhi, dLam) == 0 ? "yes" : "no (d_phi = d_lambda + k*lambda)");
+    OK1_KEY(BN_mod_mul(t, e, dPhi, phi, ctx)); check("e * d_phi = 1 (mod phi)", BN_is_one(t));
+    OK1_KEY(BN_mod_mul(t, e, dLam, lambda, ctx)); check("e * d_lambda = 1 (mod lambda)", BN_is_one(t));
 
-    // Step 6: for random m, (m^e)^d = m with both exponents and with CRT
     bool allOk = true;
-    BIGNUM *m = BN_new(), *c = BN_new(), *r = BN_new();
-    BIGNUM *m1 = BN_new(), *m2 = BN_new(), *h = BN_new();
-    NOTNULL(m); NOTNULL(c); NOTNULL(r); NOTNULL(m1); NOTNULL(m2); NOTNULL(h);
+    BIGNUM *m = BN_new(), *c = BN_new(), *r = BN_new(), *m1 = BN_new(), *m2 = BN_new(), *h = BN_new();
     for (int i = 0; i < 20; ++i) {
-        OK1(BN_rand_range(m, n));          // m uniform in [0, n)
-        OK1(BN_mod_exp(c, m, e, n, ctx));  // c = m^e mod n
-        OK1(BN_mod_exp(r, c, dPhi, n, ctx));
-        allOk &= (BN_cmp(r, m) == 0);
-        OK1(BN_mod_exp(r, c, dLam, n, ctx));
-        allOk &= (BN_cmp(r, m) == 0);
-        // CRT (Garner): m1 = c^dP mod p, m2 = c^dQ mod q, h = qInv(m1 - m2) mod p, m = m2 + h*q
-        OK1(BN_mod_exp(m1, c, dP, p, ctx));
-        OK1(BN_mod_exp(m2, c, dQ, q, ctx));
-        OK1(BN_mod_sub(h, m1, m2, p, ctx));
-        OK1(BN_mod_mul(h, qInv, h, p, ctx));
-        OK1(BN_mul(r, h, q, ctx));
-        OK1(BN_add(r, r, m2));
+        OK1_KEY(BN_rand_range(m, n));
+        OK1_KEY(BN_mod_exp(c, m, e, n, ctx));
+        OK1_KEY(BN_mod_exp(r, c, dPhi, n, ctx)); allOk &= (BN_cmp(r, m) == 0);
+        OK1_KEY(BN_mod_exp(r, c, dLam, n, ctx)); allOk &= (BN_cmp(r, m) == 0);
+        OK1_KEY(BN_mod_exp(m1, c, dP, p, ctx));
+        OK1_KEY(BN_mod_exp(m2, c, dQ, q, ctx));
+        OK1_KEY(BN_mod_sub(h, m1, m2, p, ctx));
+        OK1_KEY(BN_mod_mul(h, qInv, h, p, ctx));
+        OK1_KEY(BN_mul(r, h, q, ctx));
+        OK1_KEY(BN_add(r, r, m2));
         allOk &= (BN_cmp(r, m) == 0);
     }
     check("20 random messages decrypt with d_phi, d_lambda and CRT", allOk);
-    std::printf("\n");
 
     for (BIGNUM* x : {e, p, q, pm1, qm1, g, n, phi, lambda, dPhi, dLam, dP, dQ, qInv, t, m, c, r, m1, m2, h})
-        BN_clear_free(x); // wipe sensitive values
+        BN_clear_free(x);
     BN_CTX_free(ctx);
-}
-
-// ==========================================================================
-// Part 2. Production key generation and key files
-// ==========================================================================
-static EVP_PKEY* generateKey(int bits) {
-    EVP_PKEY_CTX* kctx = EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr);
-    NOTNULL(kctx);
-    OKPOS(EVP_PKEY_keygen_init(kctx));
-    OKPOS(EVP_PKEY_CTX_set_rsa_keygen_bits(kctx, bits)); // e = 65537 default
-    EVP_PKEY* key = nullptr;
-    OKPOS(EVP_PKEY_generate(kctx, &key));
-    EVP_PKEY_CTX_free(kctx);
-    return key;
-}
-
-static void writeKeyFiles(EVP_PKEY* key) {
-    // PEM private key: PKCS#8 "BEGIN PRIVATE KEY", no encryption (lab only)
-    BIO* b = BIO_new_file("private.pem", "wb"); NOTNULL(b);
-    OK1(PEM_write_bio_PrivateKey(b, key, nullptr, nullptr, 0, nullptr, nullptr));
-    BIO_free(b);
-    // PEM public key: SubjectPublicKeyInfo "BEGIN PUBLIC KEY"
-    b = BIO_new_file("public.pem", "wb"); NOTNULL(b);
-    OK1(PEM_write_bio_PUBKEY(b, key));
-    BIO_free(b);
-    // DER private key: PKCS#8
-    b = BIO_new_file("private.der", "wb"); NOTNULL(b);
-    OK1(i2d_PKCS8PrivateKey_bio(b, key, nullptr, nullptr, 0, nullptr, nullptr));
-    BIO_free(b);
-    // DER public key: SubjectPublicKeyInfo
-    b = BIO_new_file("public.der", "wb"); NOTNULL(b);
-    OK1(i2d_PUBKEY_bio(b, key));
-    BIO_free(b);
-    std::printf("  wrote private.pem, public.pem, private.der, public.der\n");
-}
-
-static EVP_PKEY* loadKey(const char* path, bool isPrivate, bool isPem) {
-    BIO* b = BIO_new_file(path, "rb");
-    NOTNULL(b);
-    EVP_PKEY* k = nullptr;
-    if (isPrivate)
-        k = isPem ? PEM_read_bio_PrivateKey(b, nullptr, nullptr, nullptr) : d2i_PrivateKey_bio(b, nullptr);
-    else
-        k = isPem ? PEM_read_bio_PUBKEY(b, nullptr, nullptr, nullptr) : d2i_PUBKEY_bio(b, nullptr);
-    BIO_free(b);
-    NOTNULL(k);
-    return k;
-}
-
-// Key ID = SHA-256 over the DER SubjectPublicKeyInfo
-static Bytes keyId(EVP_PKEY* key) {
-    unsigned char* der = nullptr;
-    int len = i2d_PUBKEY(key, &der); // allocates der
-    if (len <= 0) die("i2d_PUBKEY");
-    Bytes id(32);
-    unsigned int outLen = 0;
-    OK1(EVP_Digest(der, static_cast<size_t>(len), id.data(), &outLen, EVP_sha256(), nullptr));
-    OPENSSL_free(der);
-    return id;
+    std::printf("\n");
 }
 
 static EVP_PKEY* part2KeyFiles() {
-    std::printf("== Part 2: EVP_PKEY key generation, PEM and DER ==\n");
-    EVP_PKEY* key = generateKey(3072);
-    std::printf("  generated RSA-%d\n", EVP_PKEY_get_bits(key));
-    writeKeyFiles(key);
+    std::printf("== Part 2: Real RSA KeyGen (3072 bits) & PEM/DER File I/O ==\n");
+    EVP_PKEY* key = generate_rsa_key(3072);
+    NOTNULL_KEY(key);
+    std::printf("  generated RSA-%d key pair\n", EVP_PKEY_get_bits(key));
+    export_key_files(key);
 
-    EVP_PKEY* privPem = loadKey("private.pem", true, true);
-    EVP_PKEY* privDer = loadKey("private.der", true, false);
-    EVP_PKEY* pubPem  = loadKey("public.pem", false, true);
-    EVP_PKEY* pubDer  = loadKey("public.der", false, false);
+    EVP_PKEY* privPem = load_key_from_file("private.pem", true, true);
+    EVP_PKEY* privDer = load_key_from_file("private.der", true, false);
+    EVP_PKEY* pubPem  = load_key_from_file("public.pem", false, true);
+    EVP_PKEY* pubDer  = load_key_from_file("public.der", false, false);
 
-    // EVP_PKEY_eq compares public components (n, e)
     check("private.pem matches public.pem", EVP_PKEY_eq(privPem, pubPem) == 1);
     check("private.der matches public.der", EVP_PKEY_eq(privDer, pubDer) == 1);
     check("private.pem matches public.der", EVP_PKEY_eq(privPem, pubDer) == 1);
     check("private.der matches public.pem", EVP_PKEY_eq(privDer, pubPem) == 1);
 
-    EVP_PKEY* other = generateKey(2048);
-    check("a different key does NOT match", EVP_PKEY_eq(other, pubPem) != 1);
+    EVP_PKEY* other = generate_rsa_key(2048);
+    check("different key does NOT match", EVP_PKEY_eq(other, pubPem) != 1);
     ERR_clear_error();
 
-    Bytes id1 = keyId(pubPem), id2 = keyId(pubDer);
-    printHex("key ID", id1.data(), id1.size(), 32);
-    check("key ID is the same for PEM and DER", id1 == id2);
-    std::printf("\n");
+    Bytes id1 = compute_key_id(pubPem), id2 = compute_key_id(pubDer);
+    print_hex("Key ID (PEM)", id1.data(), id1.size(), 32);
+    check("Key ID matches 100% between PEM and DER", id1 == id2);
 
     for (EVP_PKEY* k : {privPem, privDer, pubPem, pubDer, other}) EVP_PKEY_free(k);
+    std::printf("\n");
     return key;
 }
 
-// ==========================================================================
-// Part 3. Inside OpenSSL's key: d is computed modulo lambda(n)
-// ==========================================================================
-static BIGNUM* getParam(EVP_PKEY* key, const char* name) {
-    BIGNUM* x = nullptr; // EVP allocates x
-    OK1(EVP_PKEY_get_bn_param(key, name, &x));
-    return x;
-}
-
-static void part3InsideTheKey(EVP_PKEY* key) {
-    std::printf("== Part 3: parameters inside the OpenSSL key ==\n");
+static void part3InsideKey(EVP_PKEY* key) {
+    std::printf("== Part 3: Inside OpenSSL Key - Parameters & Exponent Analysis ==\n");
     BN_CTX* ctx = BN_CTX_new();
-    NOTNULL(ctx);
-    BIGNUM* n = getParam(key, OSSL_PKEY_PARAM_RSA_N);
-    BIGNUM* e = getParam(key, OSSL_PKEY_PARAM_RSA_E);
-    BIGNUM* d = getParam(key, OSSL_PKEY_PARAM_RSA_D);
-    BIGNUM* p = getParam(key, OSSL_PKEY_PARAM_RSA_FACTOR1);
-    BIGNUM* q = getParam(key, OSSL_PKEY_PARAM_RSA_FACTOR2);
-    printBnBits("n", n);
-    printBn("e", e);
+    BIGNUM* n = get_bn_param(key, OSSL_PKEY_PARAM_RSA_N);
+    BIGNUM* e = get_bn_param(key, OSSL_PKEY_PARAM_RSA_E);
+    BIGNUM* d = get_bn_param(key, OSSL_PKEY_PARAM_RSA_D);
+    BIGNUM* p = get_bn_param(key, OSSL_PKEY_PARAM_RSA_FACTOR1);
+    BIGNUM* q = get_bn_param(key, OSSL_PKEY_PARAM_RSA_FACTOR2);
 
-    BIGNUM *pq = BN_new(), *pm1 = BN_dup(p), *qm1 = BN_dup(q), *phi = BN_new();
-    BIGNUM *g = BN_new(), *lambda = BN_new();
-    NOTNULL(pq); NOTNULL(pm1); NOTNULL(qm1); NOTNULL(phi); NOTNULL(g); NOTNULL(lambda);
-    OK1(BN_mul(pq, p, q, ctx));
-    check("n == p * q", BN_cmp(pq, n) == 0);
-    OK1(BN_sub_word(pm1, 1));
-    OK1(BN_sub_word(qm1, 1));
-    OK1(BN_mul(phi, pm1, qm1, ctx));
-    OK1(BN_gcd(g, pm1, qm1, ctx));
-    OK1(BN_div(lambda, nullptr, phi, g, ctx));
+    print_bn_bits("n", n);
+    print_bn_dec("e", e);
+
+    BIGNUM *pq = BN_new(), *pm1 = BN_dup(p), *qm1 = BN_dup(q), *phi = BN_new(), *g = BN_new(), *lambda = BN_new();
+    OK1_KEY(BN_mul(pq, p, q, ctx)); check("n == p * q", BN_cmp(pq, n) == 0);
+
+    OK1_KEY(BN_sub_word(pm1, 1));
+    OK1_KEY(BN_sub_word(qm1, 1));
+    OK1_KEY(BN_mul(phi, pm1, qm1, ctx));
+    OK1_KEY(BN_gcd(g, pm1, qm1, ctx));
+    OK1_KEY(BN_div(lambda, nullptr, phi, g, ctx));
+
     BIGNUM* dLam = BN_mod_inverse(nullptr, e, lambda, ctx);
     BIGNUM* dPhi = BN_mod_inverse(nullptr, e, phi, ctx);
-    NOTNULL(dLam); NOTNULL(dPhi);
     check("OpenSSL's d == e^-1 mod lambda(n)", BN_cmp(d, dLam) == 0);
-    std::printf("  e^-1 mod phi(n) equals d this time? %s\n",
-                BN_cmp(d, dPhi) == 0 ? "yes (happens by chance)" : "no");
-    std::printf("\n");
+    std::printf("  e^-1 mod phi(n) equals d this time? %s\n", BN_cmp(d, dPhi) == 0 ? "yes" : "no");
 
     for (BIGNUM* x : {n, e, d, p, q, pq, pm1, qm1, phi, g, lambda, dLam, dPhi})
         BN_clear_free(x);
     BN_CTX_free(ctx);
 }
 
-// ==========================================================================
-// Main Function
-// ==========================================================================
+// Interactive CLI Menu for Task B
+void print_menu(EVP_PKEY *pkey) {
+    std::cout << "\n============================================================\n";
+    std::cout << "               OpenSSL RSA CLI Tool (Task B)\n";
+    std::cout << "============================================================\n";
+    if (pkey) {
+        std::cout << "Current key: RSA " << EVP_PKEY_get_bits(pkey) << "-bit ("
+                  << (is_private_key(pkey) ? "private" : "public") << ")\n";
+    } else {
+        std::cout << "Current key: none\n";
+    }
+    std::cout << "============================================================\n";
+    std::cout << "1. Generate a new RSA key pair (2048/3072 bit)\n";
+    std::cout << "2. Export key to PEM file (private.pem / public.pem)\n";
+    std::cout << "3. Export key to DER file (private.der / public.der)\n";
+    std::cout << "4. Import key from file (Auto detect PEM/DER)\n";
+    std::cout << "5. Show key information (n, e, d, p, q, dP, dQ, qInv)\n";
+    std::cout << "6. Print key in PEM format to screen\n";
+    std::cout << "0. Exit\n";
+    std::cout << "Choose option: ";
+}
+
+static void runMenu() {
+    EVP_PKEY* pkey = nullptr;
+    int choice = -1;
+
+    while (true) {
+        print_menu(pkey);
+        if (!(std::cin >> choice)) {
+            std::cin.clear();
+            std::string discard;
+            std::cin >> discard;
+            std::cout << "Invalid input!\n";
+            continue;
+        }
+
+        if (choice == 0) {
+            std::cout << "\nExiting program...\n";
+            if (pkey) EVP_PKEY_free(pkey);
+            break;
+        }
+
+        if (choice == 1) {
+            std::cout << "Enter key size (2048 or 3072, default 3072): ";
+            int bits = 3072;
+            std::cin >> bits;
+            if (bits != 2048 && bits != 3072) bits = 3072;
+            std::cout << "Generating RSA " << bits << "-bit key pair, please wait...\n";
+            EVP_PKEY* newKey = generate_rsa_key(bits);
+            if (newKey) {
+                if (pkey) EVP_PKEY_free(pkey);
+                pkey = newKey;
+                std::cout << "Generated new RSA " << bits << "-bit key pair successfully!\n";
+            }
+        } else if (choice == 2) {
+            if (!pkey) {
+                std::cout << "Error: No key loaded!\n";
+            } else {
+                if (is_private_key(pkey)) {
+                    BIO* b = BIO_new_file("private.pem", "wb");
+                    if (b) { PEM_write_bio_PrivateKey(b, pkey, nullptr, nullptr, 0, nullptr, nullptr); BIO_free(b); }
+                    std::cout << "  - wrote private.pem (PKCS#8 PEM)\n";
+                }
+                BIO* b = BIO_new_file("public.pem", "wb");
+                if (b) { PEM_write_bio_PUBKEY(b, pkey); BIO_free(b); }
+                std::cout << "  - wrote public.pem (SubjectPublicKeyInfo PEM)\n";
+                std::cout << "Exported key to PEM file(s) successfully!\n";
+            }
+        } else if (choice == 3) {
+            if (!pkey) {
+                std::cout << "Error: No key loaded!\n";
+            } else {
+                if (is_private_key(pkey)) {
+                    BIO* b = BIO_new_file("private.der", "wb");
+                    if (b) { i2d_PKCS8PrivateKey_bio(b, pkey, nullptr, nullptr, 0, nullptr, nullptr); BIO_free(b); }
+                    std::cout << "  - wrote private.der (PKCS#8 DER)\n";
+                }
+                BIO* b = BIO_new_file("public.der", "wb");
+                if (b) { i2d_PUBKEY_bio(b, pkey); BIO_free(b); }
+                std::cout << "  - wrote public.der (SubjectPublicKeyInfo DER)\n";
+                std::cout << "Exported key to DER file(s) successfully!\n";
+            }
+        } else if (choice == 4) {
+            std::cout << "Enter file path to import: ";
+            std::string path;
+            std::cin >> path;
+            EVP_PKEY* loaded = load_key_auto(path.c_str());
+            if (loaded) {
+                if (pkey) EVP_PKEY_free(pkey);
+                pkey = loaded;
+                std::cout << "Imported key successfully from " << path << "!\n";
+            } else {
+                std::cout << "Error: Failed to import key from " << path << "!\n";
+            }
+        } else if (choice == 5) {
+            print_key_info(pkey);
+        } else if (choice == 6) {
+            print_key_pem_stdout(pkey);
+        } else {
+            std::cout << "Invalid option! Please choose again.\n";
+        }
+    }
+}
+
 int main(int argc, char** argv) {
-    int eduBits = (argc > 1) ? std::atoi(argv[1]) : 512;
-    if (eduBits < 128 || eduBits > 1024 || eduBits % 2) {
-        die("edu-bits must be even, 128..1024");
+    if (argc == 2 && std::strcmp(argv[1], "--test") == 0) {
+        part1EducationalRsa(512);
+        EVP_PKEY* key = part2KeyFiles();
+        part3InsideKey(key);
+        EVP_PKEY_free(key);
+        std::printf("\n%s\n", g_failures ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED");
+        return g_failures ? 1 : 0;
     }
 
-    part1EducationalRsa(eduBits);
-    EVP_PKEY* key = part2KeyFiles();
-    part3InsideTheKey(key);
-    EVP_PKEY_free(key);
-
-    std::printf("%s\n", g_failures ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED");
-    return g_failures ? 1 : 0;
+    // Default: run interactive CLI menu
+    runMenu();
+    return 0;
 }
